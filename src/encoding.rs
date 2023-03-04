@@ -1,5 +1,4 @@
 use chess::*;
-use tch::kind;
 
 type EncodedPositions = ndarray::ArrayBase<ndarray::OwnedRepr<f32>, ndarray::Dim<[usize; 4]>>;
 

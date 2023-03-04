@@ -1,29 +1,23 @@
 use chess::*;
-use encoding::get_neural_output;
 use std::{
-    io::Cursor,
+    io::{self, BufRead},
     str::FromStr,
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
+    sync::{mpsc, Arc},
+    thread
 };
-use vampirc_uci::{UciPiece, UciTimeControl};
 
-pub mod encoding;
+use vampirc_uci::{UciPiece, UciTimeControl, parse_one, UciMessage};
+
+mod config;
 mod mcts;
+pub mod encoding;
+
+use config::*;
 pub use encoding::*;
-use std::sync::mpsc;
-use std::sync::Arc;
-use std::thread;
-
-// lip_fNQIpwuiW87k1Fu9GCKI
-
-const MODEL: &str = "Net_20x256_temp_10.pt";
-//const MODEL_DATA: &[u8] = include_bytes!("../Net_10x128.pt");
 
 fn main() {
-    use std::io::{self, BufRead};
-    use vampirc_uci::{parse_one, UciMessage};
-
     eprintln!("Divine 0.1 compiled on rustc 1.67.0-nightly (09508489e 2022-11-04)");
     eprintln!(
         "Current libtorch intra-op threads: {}",
@@ -46,10 +40,11 @@ fn main() {
         let should_stop = should_stop.clone();
         thread::spawn(move || {
             loop {
+                #[allow(unused)]
                 use std::process::{Command, Stdio};
 
-                #[cfg(feature = "use_orca")]
-                let mut child = Command::new("./orca")
+                #[cfg(feature = "use_external_eval")]
+                let mut child = Command::new(ENGINE)
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .spawn()
@@ -68,31 +63,13 @@ fn main() {
                             white_time,
                             black_time,
                             white_increment,
-                            black_increment,
                             ..
                         } => {
                             let time_left = match board.side_to_move() {
                                 Color::White => {
                                     white_time.unwrap().to_std().unwrap()
-                                        + white_increment
-                                            .unwrap_or(vampirc_uci::Duration::seconds(0))
-                                            .to_std()
-                                            .unwrap()
                                 }
                                 Color::Black => {
-                                    black_time.unwrap().to_std().unwrap()
-                                        + black_increment
-                                            .unwrap_or(vampirc_uci::Duration::seconds(0))
-                                            .to_std()
-                                            .unwrap()
-                                }
-                            };
-
-                            let opponent_time_left = match board.side_to_move() {
-                                Color::Black => {
-                                    white_time.unwrap().to_std().unwrap()
-                                }
-                                Color::White => {
                                     black_time.unwrap().to_std().unwrap()
                                 }
                             };
@@ -103,7 +80,8 @@ fn main() {
                             } else {
                                 ((1.0 / 10.0) * (moves - 60.0) + 10.0) as u32
                             };*/
-                            (time_left / 40).min(Duration::from_secs(60)) + white_increment.unwrap().to_std().unwrap()
+                            (time_left / 40).min(Duration::from_secs(60))
+                                + white_increment.unwrap().to_std().unwrap()
                         }
                         _ => Duration::from_millis(60000),
                     },
@@ -113,13 +91,13 @@ fn main() {
                 let mut rollouts = 0;
                 tch::no_grad(|| loop {
                     // make sure that a sensical move is chosen when time is low
-                    if now.elapsed() >= target && rollouts >= 110 {
+                    if now.elapsed() >= target {
                         break;
                     }
 
                     root.parallel_rollouts(board.current_position(), &model, 8, {
                         cfg_if::cfg_if! {
-                            if #[cfg(feature = "use_orca")] {
+                            if #[cfg(feature = "use_external_eval")] {
                                 Some(&mut child)
                             } else {
                                 None
@@ -134,7 +112,7 @@ fn main() {
                     let edge = edge.borrow();
                     rollouts += 8;
                     let q = edge.get_q() * 2.0 - 1.0;
-                    let score = -(q.signum() * (1.0 - q.abs()).ln() / (1.2f32).ln()) * 100.0;
+                    let score = -(q.signum() * (1.0 - q.abs()).ln() / (1.2f32).ln()) * 100.0 / 2.0;
 
                     let pv = {
                         let mut pv = vec![];
@@ -175,11 +153,12 @@ fn main() {
                     };
 
                     println!(
-                        "info currmove {} depth {} score cp {} nodes {} time {} pv {}",
+                        "info currmove {} depth {} score cp {} nodes {} nps {} time {} pv {}",
                         edge.max_n_select(&board, true).unwrap().borrow().mov,
                         root.depth,
                         score as i32,
                         rollouts,
+                        rollouts as u32 / now.elapsed().as_secs().max(1) as u32,
                         now.elapsed().as_millis(),
                         pv
                     );
@@ -216,7 +195,6 @@ fn main() {
                 }
 
                 let best_move = pv[0];
-                let ponder = pv.get(1);
                 let pv = pv
                     .iter()
                     .map(|mov| format!("{}", mov))
@@ -233,7 +211,7 @@ fn main() {
 
                 println!("bestmove {}", best_move);
 
-                #[cfg(feature = "use_orca")]
+                #[cfg(feature = "use_external_eval")]
                 {
                     let _ = child.kill();
                     let _ = child.wait();
@@ -330,9 +308,6 @@ fn main() {
             }
             UciMessage::Go { time_control, .. } => {
                 tx.send((board.clone(), time_control)).unwrap();
-                //let result = search::search(board);
-                //println!("bestmove {}", result.0);
-                //eprintln!("Eval: {}", result.1);
             }
             UciMessage::IsReady => println!("readyok"),
             UciMessage::Quit => break,

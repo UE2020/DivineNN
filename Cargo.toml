@@ -13,4 +13,4 @@ tch = "0.10.1"
 vampirc-uci = "0.11.1"
 
 [features]
-use_orca = []
+use_external_eval = []

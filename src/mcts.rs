@@ -1,11 +1,13 @@
+// Known failed positions:
+// 4b3/1k6/8/1PB1K3/2pNp1p1/5p2/1PP4P/8 w - - 0 55
+// 8/5p1p/k3r3/p1Q5/3P4/8/P4nP1/1K6 w - - 1 52
+
 use super::*;
 
 use std::cell::RefCell;
 use std::process::Child;
 use std::rc::Rc;
 
-// failed positions: 4b3/1k6/8/1PB1K3/2pNp1p1/5p2/1PP4P/8 w - - 0 55
-// 8/5p1p/k3r3/p1Q5/3P4/8/P4nP1/1K6 w - - 1 52
 pub fn calculate_uct(edge: &Edge, n_p: f32, root: bool) -> f32 {
     let q = edge.get_q();
     let n_c = edge.get_n();
@@ -14,8 +16,23 @@ pub fn calculate_uct(edge: &Edge, n_p: f32, root: bool) -> f32 {
     let init = 1.745;
     let factor = 3.894;
 
-    let c = init + factor * ((n_c + 38739.0) / 38739.00).ln();
+    let c = if root {
+        init + factor * ((n_c + 38739.0) / 38739.00).ln()
+    } else {
+        3.1
+    };
     let uct = q + p * c * n_p.sqrt() / (1.0 + n_c);
+
+    uct
+}
+
+#[allow(unused)]
+pub fn calculate_uct_no_cpuct(edge: &Edge, n_p: f32) -> f32 {
+    let q = edge.get_q();
+    let n_c = edge.get_n();
+    let p = edge.p;
+
+    let uct = q + p * 0.0 * n_p.sqrt() / (1.0 + n_c);
 
     uct
 }
@@ -29,10 +46,8 @@ pub struct Node {
 
 impl Node {
     pub fn new(
-        board: Board,
         new_q: f32,
         probabilities: &mut [(ChessMove, f32)],
-        root: bool,
     ) -> Self {
         Self {
             n: 1.0,
@@ -79,10 +94,8 @@ impl Node {
         let mut max_edge = None;
         let score = ((self.get_q() - 0.5) * 15.0 * 100.0) as i32;
 
-        //position fen k5nr/1R2ppbp/B5p1/4P3/4NP2/4B2P/4K1P1/7r w - - 3 26 moves b7a7 a8b8 a7b7 b8a8
         'outer: for edge in self.edges.iter() {
             let unlocked_edge = edge.borrow();
-            let n = unlocked_edge.get_n();
             if score >= 0 && detect_draw {
                 // try the move
                 let mut game = game.clone();
@@ -102,14 +115,16 @@ impl Node {
                 }
             }
 
-            if max_n < n {
-                max_n = n;
+            //let value = calculate_uct_no_cpuct(&edge.borrow(), self.n);
+            let value = unlocked_edge.get_n();
+            if max_n < value {
+                max_n = value;
                 max_edge = Some(edge.clone());
             }
         }
 
         if max_edge.is_none() && detect_draw {
-            max_edge = self.max_n_select(game, false); // anything less than 10 works
+            max_edge = self.max_n_select(game, false);
         }
 
         max_edge
@@ -161,16 +176,13 @@ impl Edge {
 
     pub fn expand(
         &mut self,
-        board: Board,
         new_q: f32,
         move_probabilities: &mut [(ChessMove, f32)],
     ) -> bool {
         if self.child.is_none() {
             self.child = Some(Rc::new(RefCell::new(Node::new(
-                board,
                 new_q,
                 move_probabilities,
-                false,
             ))));
 
             true
@@ -199,7 +211,7 @@ impl Root {
     pub fn new(board: Board, network: &tch::CModule) -> Self {
         let (mut move_probabilities, value) = get_neural_output(board, network);
         let q = value / 2.0 + 0.5;
-        let node = Node::new(board, q, &mut move_probabilities, false);
+        let node = Node::new(q, &mut move_probabilities);
 
         Self {
             root_node: Rc::new(RefCell::new(node)),
@@ -245,73 +257,13 @@ impl Root {
         }
     }
 
-    pub fn rollout(&mut self, mut board: Board, network: &tch::CModule) {
-        let mut node_path = vec![];
-        let mut edge_path = vec![];
-
-        Self::select_task(
-            self.root_node.clone(),
-            &mut board,
-            &mut node_path,
-            &mut edge_path,
-        );
-
-        let edge = &edge_path[edge_path.len() - 1];
-
-        let mut new_q;
-
-        if let Some(edge) = edge {
-            let (mut move_probabilities, value) = get_neural_output(board, &network);
-            new_q = value / 2.0 + 0.5;
-            edge.borrow_mut()
-                .expand(board, value - 0.12, &mut move_probabilities);
-            new_q = 1. - new_q
-        } else {
-            let mut winner = match board.status() {
-                BoardStatus::Checkmate => {
-                    if board.side_to_move() == Color::White {
-                        -1
-                    } else {
-                        1
-                    }
-                }
-                BoardStatus::Stalemate => 0,
-                BoardStatus::Ongoing => unreachable!(),
-            };
-
-            if board.side_to_move() != Color::White {
-                winner *= -1;
-            }
-
-            new_q = winner as f32 / 2. + 0.5;
-        }
-
-        self.depth = self.depth.max(node_path.len());
-
-        let last_node_idx = node_path.len() - 1;
-        for i in (0..=last_node_idx).rev() {
-            let node = &node_path[i];
-            let mut node = node.borrow_mut();
-            node.n += 1.0;
-            if (last_node_idx - i) % 2 == 0 {
-                node.sum_q += new_q;
-            } else {
-                node.sum_q += 1.0 - new_q;
-            }
-        }
-
-        for edge in edge_path {
-            if let Some(edge) = edge {
-                edge.borrow_mut().clear_virtual_loss();
-            }
-        }
-    }
-
     pub fn parallel_rollouts(
         &mut self,
         board: Board,
         network: &tch::CModule,
         count: usize,
+
+        #[allow(unused)]
         child: Option<&mut Child>,
     ) {
         let mut results = vec![];
@@ -357,7 +309,7 @@ impl Root {
                         winner
                     }
                     BoardStatus::Stalemate => 0.0,
-                    #[cfg(feature = "use_orca")]
+                    #[cfg(feature = "use_external_eval")]
                     BoardStatus::Ongoing => {
                         use std::io::{Read, Write};
                         use vampirc_uci::{parse, parse_one, UciInfoAttribute, UciMessage};
@@ -398,12 +350,15 @@ impl Root {
                                                             / (1.0
                                                                 + 10.0f32.powf(
                                                                     -(cp as f32 / 100.0) / 4.0,
-                                                                ))) - 1.0;
+                                                                )))
+                                                        - 1.0;
                                                 } else if let Some(mate) = mate {
                                                     if mate > 0 {
-                                                        last_value = 1.0 - (mate.abs() as f32 * 0.01);
+                                                        last_value =
+                                                            1.0 - (mate.abs() as f32 * 0.01);
                                                     } else {
-                                                        last_value = -1.0 + (mate.abs() as f32 * 0.01);
+                                                        last_value =
+                                                            -1.0 + (mate.abs() as f32 * 0.01);
                                                     }
                                                     stdin
                                                         .write_all("stop\n".as_bytes())
@@ -421,19 +376,19 @@ impl Root {
                         }
 
                         last_value
-                    },
-                    
+                    }
+
                     #[cfg(not(feature = "webp"))]
-                    BoardStatus::Ongoing => output.1
+                    BoardStatus::Ongoing => output.1,
                 };
 
                 new_q = value / 2.0 + 0.5;
-                let is_unexpanded = edge.borrow_mut().expand(board, new_q, &mut output.0);
+                let is_unexpanded = edge.borrow_mut().expand(new_q, &mut output.0);
 
-                    if !is_unexpanded {
-                        self.same_paths += 1;
-                    }
-                    new_q = 1. - new_q
+                if !is_unexpanded {
+                    self.same_paths += 1;
+                }
+                new_q = 1. - new_q
             } else {
                 let mut winner = match board.status() {
                     BoardStatus::Checkmate => {
