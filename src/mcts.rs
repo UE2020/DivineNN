@@ -286,6 +286,9 @@ impl Root {
 
         let mut output = get_neural_output_batched(&boards, &network);
 
+        #[cfg(feature = "use-external-eval")]
+        let child = child.unwrap();
+
         for (job, output) in results.iter().zip(output.iter_mut()) {
             let edges = job.edge_path.len();
             let edge = &job.edge_path[edges - 1];
@@ -309,10 +312,10 @@ impl Root {
                         winner
                     }
                     BoardStatus::Stalemate => 0.0,
-                    #[cfg(feature = "use_external_eval")]
+                    #[cfg(feature = "use-external-eval")]
                     BoardStatus::Ongoing => {
                         use std::io::{Read, Write};
-                        use vampirc_uci::{parse, parse_one, UciInfoAttribute, UciMessage};
+                        use vampirc_uci::UciInfoAttribute;
 
                         let stdin = child.stdin.as_mut().unwrap();
                         let stdout = child.stdout.as_mut().unwrap();
@@ -378,7 +381,7 @@ impl Root {
                         last_value
                     }
 
-                    #[cfg(not(feature = "webp"))]
+                    #[cfg(not(feature = "use-external-eval"))]
                     BoardStatus::Ongoing => output.1,
                 };
 

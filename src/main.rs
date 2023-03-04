@@ -43,7 +43,7 @@ fn main() {
                 #[allow(unused)]
                 use std::process::{Command, Stdio};
 
-                #[cfg(feature = "use_external_eval")]
+                #[cfg(feature = "use-external-eval")]
                 let mut child = Command::new(ENGINE)
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
@@ -97,7 +97,7 @@ fn main() {
 
                     root.parallel_rollouts(board.current_position(), &model, 8, {
                         cfg_if::cfg_if! {
-                            if #[cfg(feature = "use_external_eval")] {
+                            if #[cfg(feature = "use-external-eval")] {
                                 Some(&mut child)
                             } else {
                                 None
@@ -211,7 +211,7 @@ fn main() {
 
                 println!("bestmove {}", best_move);
 
-                #[cfg(feature = "use_external_eval")]
+                #[cfg(feature = "use-external-eval")]
                 {
                     let _ = child.kill();
                     let _ = child.wait();
