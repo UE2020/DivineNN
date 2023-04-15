@@ -24,4 +24,5 @@ DivineNN can theoretically perform at the level of Stockfish with a good network
 ### Resources 
 
 https://github.com/coreylowman/synthesis
+
 https://github.com/geochri/AlphaZero_Chess
