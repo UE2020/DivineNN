@@ -8,17 +8,13 @@ Training code is not available at this time. A decently-strong network (~2150 el
 
 ## Compiling
 
-`libtorch` is required for neural network loading & inference. See:
-
-https://pytorch.org/cppdocs/installing.html
-
 DivineNN is written in Rust. As such, the Rust compiler is required to compile DivineNN. See:
 
 https://rustup.rs
 
-Compiling DivineNN is as simple as:
+Compiling & running DivineNN is as simple as:
 ```bash
-RUSTFLAGS='-C target-cpu=native' cargo build --release
+RUSTFLAGS='-C target-cpu=native' cargo run --release
 ```
 
 ## Strength
@@ -28,4 +24,5 @@ DivineNN can theoretically perform at the level of Stockfish with a good network
 ### Resources 
 
 https://github.com/coreylowman/synthesis
+
 https://github.com/geochri/AlphaZero_Chess
