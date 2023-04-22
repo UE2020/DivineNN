@@ -81,7 +81,7 @@ fn main() {
                                 ((1.0 / 10.0) * (moves - 60.0) + 10.0) as u32
                             };*/
                             (time_left / 40).min(Duration::from_secs(60))
-                                + white_increment.unwrap().to_std().unwrap()
+                                + white_increment.unwrap_or(vampirc_uci::Duration::milliseconds(0)).to_std().unwrap()
                         }
                         _ => Duration::from_millis(60000),
                     },
@@ -224,7 +224,7 @@ fn main() {
         let msg: UciMessage = parse_one(&line.unwrap());
         match msg {
             UciMessage::Uci => {
-                println!("id name DeepAkil");
+                println!("id name DivineNN");
                 println!("uciok")
             }
             UciMessage::Position {

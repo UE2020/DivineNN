@@ -115,8 +115,9 @@ impl Node {
                 }
             }
 
-            let value = calculate_uct_no_cpuct(&edge.borrow(), self.n);
-            //let value = unlocked_edge.get_n();
+           // let value = calculate_uct_no_cpuct(&edge.borrow(), self.n);
+            //let value = unlocked_edge.get_q();
+            let value = unlocked_edge.get_n();
             if max_n < value {
                 max_n = value;
                 max_edge = Some(edge.clone());
