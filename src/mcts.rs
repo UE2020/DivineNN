@@ -13,15 +13,15 @@ pub fn calculate_uct(edge: &Edge, n_p: f32, root: bool) -> f32 {
     let n_c = edge.get_n();
     let p = edge.p;
 
-    let init = 1.745;
+    /*let init = 1.745;
     let factor = 3.894;
 
     let c = if root {
         init + factor * ((n_c + 38739.0) / 38739.00).ln()
     } else {
         3.1
-    };
-    let uct = q + p * c * n_p.sqrt() / (1.0 + n_c);
+    };*/
+    let uct = q + p * 1.5 * n_p.sqrt() / (1.0 + n_c);
 
     uct
 }
