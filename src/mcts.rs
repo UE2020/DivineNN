@@ -21,7 +21,7 @@ pub fn calculate_uct(edge: &Edge, n_p: f32, root: bool) -> f32 {
     } else {
         3.1
     };*/
-    let uct = q + p * 1.5 * n_p.sqrt() / (1.0 + n_c);
+    let uct = q + p * 1.25 * n_p.sqrt() / (1.0 + n_c);
 
     uct
 }
